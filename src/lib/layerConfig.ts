@@ -54,6 +54,15 @@ export const LAYER_CONFIGS: LayerConfig[] = [
     nameField: "name",
     visible: true,
   },
+  {
+    id: "hostels",
+    name: "Hostels",
+    file: "/data/hostels.geojson",
+    color: "#e0943a",
+    fillColor: "#e0943a",
+    nameField: "Name",
+    visible: true,
+  },
 ];
 
 export interface FacilityFeature {
