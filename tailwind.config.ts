@@ -57,6 +57,14 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        layer: {
+          lectures: "hsl(var(--layer-lectures))",
+          admin: "hsl(var(--layer-admin))",
+          labs: "hsl(var(--layer-labs))",
+          religious: "hsl(var(--layer-religious))",
+          workers: "hsl(var(--layer-workers))",
+          hostels: "hsl(var(--layer-hostels))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
