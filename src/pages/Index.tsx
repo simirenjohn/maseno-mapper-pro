@@ -1,16 +1,81 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState, useEffect } from "react";
+import CampusMap from "@/components/CampusMap";
+import Sidebar from "@/components/Sidebar";
+import UserGuide from "@/components/UserGuide";
+import { LAYER_CONFIGS, FacilityFeature } from "@/lib/layerConfig";
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
+const Index = () => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [visibleLayers, setVisibleLayers] = useState(LAYER_CONFIGS.map((l) => l.id));
+  const [selectedFeature, setSelectedFeature] = useState<FacilityFeature | null>(null);
+  const [allFeatures, setAllFeatures] = useState<FacilityFeature[]>([]);
+  const [showGuide, setShowGuide] = useState(false);
+
+  // Load all features from GeoJSON files
+  useEffect(() => {
+    const loadAll = async () => {
+      const features: FacilityFeature[] = [];
+
+      for (const config of LAYER_CONFIGS) {
+        try {
+          const resp = await fetch(config.file);
+          const data = await resp.json();
+
+          data.features.forEach((f: any) => {
+            const name = f.properties[config.nameField] || "Unknown";
+            features.push({
+              layerId: config.id,
+              layerName: config.name,
+              name,
+              properties: f.properties,
+              geometry: f.geometry,
+              color: config.color,
+            });
+          });
+        } catch (err) {
+          console.error(`Failed to load ${config.file}:`, err);
+        }
+      }
+
+      setAllFeatures(features);
+    };
+
+    loadAll();
+
+    // Show guide on first visit
+    const visited = localStorage.getItem("maseno-explorer-visited");
+    if (!visited) {
+      setShowGuide(true);
+      localStorage.setItem("maseno-explorer-visited", "true");
+    }
+  }, []);
+
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
+    <div className="h-screen w-screen flex overflow-hidden">
+      <Sidebar
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        categoryFilter={categoryFilter}
+        setCategoryFilter={setCategoryFilter}
+        visibleLayers={visibleLayers}
+        setVisibleLayers={setVisibleLayers}
+        onSelectFeature={setSelectedFeature}
+        allFeatures={allFeatures}
+        showGuide={showGuide}
+        setShowGuide={setShowGuide}
+      />
+      <div className="flex-1 relative">
+        <CampusMap
+          selectedFeature={selectedFeature}
+          visibleLayers={visibleLayers}
+          searchQuery={searchQuery}
+          categoryFilter={categoryFilter}
+        />
+      </div>
+      <UserGuide open={showGuide} onClose={() => setShowGuide(false)} />
     </div>
   );
 };
-
-const Index = PlaceholderIndex;
 
 export default Index;
