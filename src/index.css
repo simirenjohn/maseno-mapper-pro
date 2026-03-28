@@ -154,3 +154,44 @@ All colors MUST be HSL.
   font-weight: 600;
   color: hsl(var(--foreground));
 }
+
+.campus-tooltip {
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+/* Room table inside popups */
+.room-table-wrapper {
+  margin-top: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid hsl(var(--border));
+  padding-top: 6px;
+}
+
+.room-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.room-table th {
+  background: hsl(var(--primary));
+  color: white;
+  padding: 3px 5px;
+  text-align: left;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+
+.room-table td {
+  padding: 2px 5px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.room-table tr:hover td {
+  background: hsl(var(--accent) / 0.15);
+}

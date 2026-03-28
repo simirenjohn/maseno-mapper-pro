@@ -1,13 +1,7 @@
 import { useState, useMemo } from "react";
-import { Search, X, MapPin, ChevronRight, ChevronDown, HelpCircle, Layers } from "lucide-react";
+import { Search, X, MapPin, ChevronRight, ChevronDown, HelpCircle, Layers, Navigation } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LAYER_CONFIGS, FacilityFeature } from "@/lib/layerConfig";
-
-interface HostelFilters {
-  gender: string;
-  price: string;
-  capacity: string;
-}
 
 interface SidebarProps {
   searchQuery: string;
@@ -20,38 +14,50 @@ interface SidebarProps {
   allFeatures: FacilityFeature[];
   showGuide: boolean;
   setShowGuide: (s: boolean) => void;
+  onOpenNavigation: () => void;
 }
 
 const Sidebar = ({
   searchQuery,
   setSearchQuery,
-  categoryFilter,
-  setCategoryFilter,
   visibleLayers,
   setVisibleLayers,
   onSelectFeature,
   allFeatures,
-  showGuide,
   setShowGuide,
+  onOpenNavigation,
 }: SidebarProps) => {
   const [isOpen, setIsOpen] = useState(true);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
-  const [hostelFilters, setHostelFilters] = useState<HostelFilters>({
-    gender: "all",
-    price: "all",
-    capacity: "all",
-  });
+  // Generic filters: { [layerId]: { [filterKey]: selectedValue } }
+  const [layerFilters, setLayerFilters] = useState<Record<string, Record<string, string>>>({});
 
-  // Get unique hostel filter values
-  const hostelOptions = useMemo(() => {
-    const hostels = allFeatures.filter((f) => f.layerId === "hostels");
-    const genders = [...new Set(hostels.map((f) => f.properties["Gender"]).filter(Boolean))].sort();
-    const prices = [...new Set(hostels.map((f) => f.properties["Price"]).filter(Boolean))].sort((a, b) => a - b);
-    const capacities = [...new Set(hostels.map((f) => f.properties["Capacity Per Room"]).filter(Boolean))].sort((a, b) => a - b);
-    return { genders, prices, capacities };
+  // Build filter options dynamically from data
+  const filterOptions = useMemo(() => {
+    const opts: Record<string, Record<string, (string | number)[]>> = {};
+    for (const config of LAYER_CONFIGS) {
+      if (!config.filters) continue;
+      opts[config.id] = {};
+      const features = allFeatures.filter((f) => f.layerId === config.id);
+      for (const filter of config.filters) {
+        const values = [
+          ...new Set(
+            features
+              .map((f) => f.properties[filter.key])
+              .filter((v) => v !== null && v !== undefined && v !== "")
+          ),
+        ].sort((a, b) => {
+          const na = Number(a), nb = Number(b);
+          if (!isNaN(na) && !isNaN(nb)) return na - nb;
+          return String(a).localeCompare(String(b));
+        });
+        opts[config.id][filter.key] = values;
+      }
+    }
+    return opts;
   }, [allFeatures]);
 
-  // Group features by category
+  // Group and filter features
   const categorizedFeatures = useMemo(() => {
     const groups: Record<string, FacilityFeature[]> = {};
     let features = allFeatures;
@@ -74,40 +80,48 @@ const Sidebar = ({
     return groups;
   }, [allFeatures, searchQuery]);
 
-  // Filtered hostels based on multi-criteria
-  const filteredHostels = useMemo(() => {
-    let hostels = categorizedFeatures["hostels"] || [];
-    if (hostelFilters.gender !== "all") {
-      hostels = hostels.filter((f) => f.properties["Gender"] === hostelFilters.gender);
+  const getFilteredFeatures = (layerId: string) => {
+    let features = categorizedFeatures[layerId] || [];
+    const filters = layerFilters[layerId];
+    if (filters) {
+      for (const [key, val] of Object.entries(filters)) {
+        if (val && val !== "all") {
+          features = features.filter((f) => String(f.properties[key]) === val);
+        }
+      }
     }
-    if (hostelFilters.price !== "all") {
-      hostels = hostels.filter((f) => String(f.properties["Price"]) === hostelFilters.price);
-    }
-    if (hostelFilters.capacity !== "all") {
-      hostels = hostels.filter((f) => String(f.properties["Capacity Per Room"]) === hostelFilters.capacity);
-    }
-    return hostels;
-  }, [categorizedFeatures, hostelFilters]);
-
-  const clearHostelFilters = () => {
-    setHostelFilters({ gender: "all", price: "all", capacity: "all" });
+    return features;
   };
 
-  const hasHostelFilters =
-    hostelFilters.gender !== "all" || hostelFilters.price !== "all" || hostelFilters.capacity !== "all";
+  const setFilter = (layerId: string, key: string, value: string) => {
+    setLayerFilters((prev) => ({
+      ...prev,
+      [layerId]: { ...prev[layerId], [key]: value },
+    }));
+  };
+
+  const clearFilters = (layerId: string) => {
+    setLayerFilters((prev) => {
+      const next = { ...prev };
+      delete next[layerId];
+      return next;
+    });
+  };
+
+  const hasActiveFilters = (layerId: string) => {
+    const filters = layerFilters[layerId];
+    if (!filters) return false;
+    return Object.values(filters).some((v) => v && v !== "all");
+  };
 
   const toggleCategory = (id: string) => {
     setExpandedCategory(expandedCategory === id ? null : id);
   };
 
-  const getFeaturesForCategory = (layerId: string) => {
-    if (layerId === "hostels") return filteredHostels;
-    return categorizedFeatures[layerId] || [];
-  };
-
-  const getCategoryCount = (layerId: string) => {
-    if (layerId === "hostels") return filteredHostels.length;
-    return (categorizedFeatures[layerId] || []).length;
+  const clearAll = () => {
+    setSearchQuery("");
+    setLayerFilters({});
+    setVisibleLayers(LAYER_CONFIGS.map((l) => l.id));
   };
 
   return (
@@ -115,8 +129,7 @@ const Sidebar = ({
       {/* Mobile toggle */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="fixed top-3 left-3 z-[1000] md:hidden p-2 rounded-lg shadow-lg"
-        style={{ backgroundColor: "hsl(152, 40%, 28%)", color: "#fff" }}
+        className="fixed top-3 left-3 z-[1000] md:hidden p-2 rounded-lg shadow-lg bg-[hsl(152,40%,28%)] text-white"
       >
         <Layers className="w-5 h-5" />
       </button>
@@ -124,167 +137,142 @@ const Sidebar = ({
       <div
         className={`
           fixed md:relative z-[999] h-full
-          bg-sidebar text-sidebar-foreground
+          bg-white text-gray-800
           w-[300px] min-w-[300px] flex flex-col
           transition-transform duration-300
           ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
-          shadow-xl md:shadow-none border-r border-sidebar-border
+          shadow-xl md:shadow-none border-r border-gray-200
         `}
       >
-        {/* Dark green header */}
-        <div className="px-4 py-3" style={{ backgroundColor: "hsl(152, 40%, 28%)" }}>
+        {/* Header */}
+        <div className="px-4 py-3 bg-[hsl(152,40%,28%)]">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-base font-bold text-white tracking-tight">
                 Maseno University
               </h1>
-              <p className="text-xs text-green-200/80">
-                Facilities Management
-              </p>
+              <p className="text-xs text-green-200/80">Campus Facilities Explorer</p>
             </div>
-            <button
-              onClick={() => setShowGuide(true)}
-              className="text-green-200/80 hover:text-white transition-colors"
-              title="User Guide"
-            >
-              <HelpCircle className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={onOpenNavigation}
+                className="text-green-200/80 hover:text-white transition-colors"
+                title="Navigation"
+              >
+                <Navigation className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setShowGuide(true)}
+                className="text-green-200/80 hover:text-white transition-colors"
+                title="User Guide"
+              >
+                <HelpCircle className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Search */}
-        <div className="p-3 border-b border-sidebar-border">
+        <div className="p-3 border-b border-gray-200">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-sidebar-accent-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search facilities..."
-              className="w-full pl-9 pr-8 py-2 rounded-lg bg-sidebar-accent text-sidebar-foreground text-sm placeholder:text-sidebar-accent-foreground/60 border border-sidebar-border focus:outline-none focus:ring-2 focus:ring-sidebar-ring"
+              className="w-full pl-9 pr-8 py-2 rounded-lg bg-gray-50 text-gray-800 text-sm placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-500/40"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-sidebar-accent-foreground hover:text-sidebar-foreground"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
               >
                 <X className="w-4 h-4" />
               </button>
             )}
           </div>
+          {(searchQuery || Object.keys(layerFilters).length > 0) && (
+            <button
+              onClick={clearAll}
+              className="mt-2 text-xs text-red-500 hover:underline flex items-center gap-0.5"
+            >
+              <X className="w-3 h-3" /> Clear All
+            </button>
+          )}
         </div>
 
-        {/* Categories */}
+        {/* Categories label */}
         <div className="px-3 pt-3 pb-1">
-          <p className="text-xs font-semibold text-sidebar-accent-foreground uppercase tracking-wider">
-            Categories
-          </p>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Categories</p>
         </div>
 
         <ScrollArea className="flex-1">
           <div className="px-3 pb-3">
             {LAYER_CONFIGS.map((layer) => {
               const isExpanded = expandedCategory === layer.id;
-              const count = getCategoryCount(layer.id);
-              const features = getFeaturesForCategory(layer.id);
-              const isHostel = layer.id === "hostels";
+              const features = getFilteredFeatures(layer.id);
+              const count = features.length;
+              const hasFilters = hasActiveFilters(layer.id);
 
               return (
-                <div key={layer.id} className="border-b border-sidebar-border last:border-0">
-                  {/* Category header */}
+                <div key={layer.id} className="border-b border-gray-100 last:border-0">
                   <button
                     onClick={() => toggleCategory(layer.id)}
-                    className="w-full flex items-center justify-between py-2.5 hover:bg-sidebar-accent rounded px-1 transition-colors"
+                    className="w-full flex items-center justify-between py-2.5 hover:bg-gray-50 rounded px-1 transition-colors"
                   >
                     <div className="flex items-center gap-2">
                       {isExpanded ? (
-                        <ChevronDown className="w-4 h-4 text-sidebar-accent-foreground" />
+                        <ChevronDown className="w-4 h-4 text-gray-400" />
                       ) : (
-                        <ChevronRight className="w-4 h-4 text-sidebar-accent-foreground" />
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
                       )}
                       <span
                         className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                         style={{ backgroundColor: layer.color }}
                       />
-                      <span className="text-sm font-semibold text-sidebar-foreground uppercase tracking-wide">
+                      <span className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
                         {layer.name}
                       </span>
                     </div>
-                    <span className="text-xs font-medium bg-sidebar-accent text-sidebar-accent-foreground rounded-full px-2 py-0.5">
+                    <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${hasFilters ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                       {count}
                     </span>
                   </button>
 
-                  {/* Expanded content */}
                   {isExpanded && (
                     <div className="pb-2">
-                      {/* Hostel multi-criteria filters */}
-                      {isHostel && (
-                        <div className="px-2 pb-2 space-y-2">
+                      {/* Dynamic filters */}
+                      {layer.filters && layer.filters.length > 0 && (
+                        <div className="px-2 pb-2 space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-semibold text-sidebar-accent-foreground uppercase">
-                              Filters
-                            </p>
-                            {hasHostelFilters && (
+                            <p className="text-xs font-semibold text-gray-500 uppercase">Filters</p>
+                            {hasFilters && (
                               <button
-                                onClick={clearHostelFilters}
+                                onClick={() => clearFilters(layer.id)}
                                 className="text-xs text-red-500 hover:underline flex items-center gap-0.5"
                               >
                                 <X className="w-3 h-3" /> Clear
                               </button>
                             )}
                           </div>
-
-                          {/* Gender */}
-                          <div>
-                            <label className="text-xs text-sidebar-accent-foreground">Gender</label>
-                            <select
-                              value={hostelFilters.gender}
-                              onChange={(e) =>
-                                setHostelFilters({ ...hostelFilters, gender: e.target.value })
-                              }
-                              className="w-full mt-0.5 px-2 py-1.5 rounded bg-sidebar-accent text-sidebar-foreground text-sm border border-sidebar-border focus:outline-none focus:ring-1 focus:ring-sidebar-ring"
-                            >
-                              <option value="all">All Gender</option>
-                              {hostelOptions.genders.map((g) => (
-                                <option key={g} value={g}>{g}</option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {/* Price */}
-                          <div>
-                            <label className="text-xs text-sidebar-accent-foreground">Price</label>
-                            <select
-                              value={hostelFilters.price}
-                              onChange={(e) =>
-                                setHostelFilters({ ...hostelFilters, price: e.target.value })
-                              }
-                              className="w-full mt-0.5 px-2 py-1.5 rounded bg-sidebar-accent text-sidebar-foreground text-sm border border-sidebar-border focus:outline-none focus:ring-1 focus:ring-sidebar-ring"
-                            >
-                              <option value="all">All Price</option>
-                              {hostelOptions.prices.map((p) => (
-                                <option key={p} value={String(p)}>{p}</option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {/* Capacity */}
-                          <div>
-                            <label className="text-xs text-sidebar-accent-foreground">Capacity</label>
-                            <select
-                              value={hostelFilters.capacity}
-                              onChange={(e) =>
-                                setHostelFilters({ ...hostelFilters, capacity: e.target.value })
-                              }
-                              className="w-full mt-0.5 px-2 py-1.5 rounded bg-sidebar-accent text-sidebar-foreground text-sm border border-sidebar-border focus:outline-none focus:ring-1 focus:ring-sidebar-ring"
-                            >
-                              <option value="all">All Capacity</option>
-                              {hostelOptions.capacities.map((c) => (
-                                <option key={c} value={String(c)}>{c}</option>
-                              ))}
-                            </select>
-                          </div>
+                          {layer.filters.map((filter) => (
+                            <div key={filter.key}>
+                              <label className="text-xs text-gray-500">{filter.label}</label>
+                              <select
+                                value={layerFilters[layer.id]?.[filter.key] || "all"}
+                                onChange={(e) => setFilter(layer.id, filter.key, e.target.value)}
+                                className="w-full mt-0.5 px-2 py-1.5 rounded bg-gray-50 text-gray-800 text-sm border border-gray-200 focus:outline-none focus:ring-1 focus:ring-green-500/40"
+                              >
+                                <option value="all">All {filter.label}</option>
+                                {(filterOptions[layer.id]?.[filter.key] || []).map((v) => (
+                                  <option key={String(v)} value={String(v)}>
+                                    {v}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
                         </div>
                       )}
 
@@ -294,19 +282,19 @@ const Sidebar = ({
                           <button
                             key={`${feature.layerId}-${idx}`}
                             onClick={() => onSelectFeature(feature)}
-                            className="w-full text-left px-2 py-1.5 rounded hover:bg-sidebar-accent transition-colors flex items-center gap-2 group"
+                            className="w-full text-left px-2 py-1.5 rounded hover:bg-gray-50 transition-colors flex items-center gap-2 group"
                           >
                             <MapPin
                               className="w-3.5 h-3.5 flex-shrink-0"
                               style={{ color: feature.color }}
                             />
-                            <span className="text-sm text-sidebar-foreground truncate group-hover:text-sidebar-primary">
+                            <span className="text-sm text-gray-700 truncate group-hover:text-green-700">
                               {feature.name}
                             </span>
                           </button>
                         ))}
                         {features.length === 0 && (
-                          <p className="text-xs text-sidebar-accent-foreground py-2 text-center">
+                          <p className="text-xs text-gray-400 py-2 text-center">
                             No facilities match
                           </p>
                         )}

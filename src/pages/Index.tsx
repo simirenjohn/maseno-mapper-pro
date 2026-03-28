@@ -11,17 +11,15 @@ const Index = () => {
   const [selectedFeature, setSelectedFeature] = useState<FacilityFeature | null>(null);
   const [allFeatures, setAllFeatures] = useState<FacilityFeature[]>([]);
   const [showGuide, setShowGuide] = useState(false);
+  const [showNavigation, setShowNavigation] = useState(false);
 
-  // Load all features from GeoJSON files
   useEffect(() => {
     const loadAll = async () => {
       const features: FacilityFeature[] = [];
-
       for (const config of LAYER_CONFIGS) {
         try {
           const resp = await fetch(config.file);
           const data = await resp.json();
-
           data.features.forEach((f: any) => {
             const name = f.properties[config.nameField] || "Unknown";
             features.push({
@@ -37,13 +35,10 @@ const Index = () => {
           console.error(`Failed to load ${config.file}:`, err);
         }
       }
-
       setAllFeatures(features);
     };
-
     loadAll();
 
-    // Show guide on first visit
     const visited = localStorage.getItem("maseno-explorer-visited");
     if (!visited) {
       setShowGuide(true);
@@ -64,6 +59,7 @@ const Index = () => {
         allFeatures={allFeatures}
         showGuide={showGuide}
         setShowGuide={setShowGuide}
+        onOpenNavigation={() => setShowNavigation(true)}
       />
       <div className="flex-1 relative">
         <CampusMap
@@ -71,6 +67,9 @@ const Index = () => {
           visibleLayers={visibleLayers}
           searchQuery={searchQuery}
           categoryFilter={categoryFilter}
+          allFeatures={allFeatures}
+          showNavigation={showNavigation}
+          onCloseNavigation={() => setShowNavigation(false)}
         />
       </div>
       <UserGuide open={showGuide} onClose={() => setShowGuide(false)} />
