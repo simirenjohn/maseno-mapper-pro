@@ -12,6 +12,12 @@ const BASEMAPS = {
   Topographic: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
 };
 
+const STUDY_AREAS = [
+  { file: "/data/niles_study_area.geojson", name: "NILES Study Area" },
+  { file: "/data/siriba_study_area.geojson", name: "Siriba Study Area" },
+  { file: "/data/college_campus_study_area.geojson", name: "College Campus Study Area" },
+];
+
 interface CampusMapProps {
   selectedFeature: FacilityFeature | null;
   visibleLayers: string[];
@@ -102,7 +108,6 @@ const CampusMap = ({
           val !== ""
       );
 
-      // Check if this building has rooms
       const buildingId = properties["building_id"];
       const roomHtml =
         buildingId !== undefined && ROOM_DATA_MAP[buildingId]
@@ -156,6 +161,46 @@ const CampusMap = ({
 
     mapRef.current = map;
 
+    // Load study area boundaries (red outline, no fill)
+    STUDY_AREAS.forEach(async (area) => {
+      try {
+        const resp = await fetch(area.file);
+        const data = await resp.json();
+        L.geoJSON(data, {
+          style: () => ({
+            color: "#e53e3e",
+            weight: 2.5,
+            opacity: 0.85,
+            fillOpacity: 0,
+            dashArray: "6, 4",
+          }),
+          onEachFeature: (_feature, layer) => {
+            layer.bindTooltip(area.name, {
+              sticky: true,
+              className: "campus-tooltip",
+            });
+          },
+        }).addTo(map);
+      } catch (err) {
+        console.error(`Failed to load ${area.file}:`, err);
+      }
+    });
+
+    // Load road network (subtle grey lines)
+    fetch("/data/road_network.geojson")
+      .then((r) => r.json())
+      .then((data) => {
+        L.geoJSON(data, {
+          style: () => ({
+            color: "#888",
+            weight: 1.5,
+            opacity: 0.5,
+          }),
+        }).addTo(map);
+      })
+      .catch((err) => console.error("Failed to load road network:", err));
+
+    // Load facility layers
     LAYER_CONFIGS.forEach(async (config) => {
       try {
         const resp = await fetch(config.file);
@@ -262,7 +307,6 @@ const CampusMap = ({
     <div className="relative w-full h-full">
       <div ref={mapContainerRef} className="w-full h-full" />
 
-      {/* Navigation panel overlay */}
       {showNavigation && (
         <div className="absolute top-3 left-3 z-[800] w-72">
           <NavigationPanel
