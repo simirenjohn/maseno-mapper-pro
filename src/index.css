@@ -195,3 +195,13 @@ All colors MUST be HSL.
 .room-table tr:hover td {
   background: hsl(var(--accent) / 0.15);
 }
+
+/* Hide Leaflet Routing Machine default itinerary container */
+.leaflet-routing-container {
+  display: none !important;
+}
+
+/* Style routing waypoint markers */
+.leaflet-routing-geocoders {
+  display: none !important;
+}
