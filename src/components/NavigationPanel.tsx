@@ -1,32 +1,27 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Navigation, X, MapPin, Locate, Volume2, VolumeX } from "lucide-react";
-import { buildGraph, findNearestNode, dijkstra, speakInstruction, RouteResult } from "@/lib/routing";
+import { Navigation, X, Volume2, VolumeX } from "lucide-react";
 import { FacilityFeature } from "@/lib/layerConfig";
 
 interface NavigationPanelProps {
   allFeatures: FacilityFeature[];
-  onRouteCalculated: (route: RouteResult | null) => void;
+  onRouteReady: (origin: [number, number], destCoord: [number, number]) => void;
+  onClearRoute: () => void;
   onClose: () => void;
+  routeSummary: { distance: number; time: number } | null;
 }
 
-const NavigationPanel = ({ allFeatures, onRouteCalculated, onClose }: NavigationPanelProps) => {
+const NavigationPanel = ({
+  allFeatures,
+  onRouteReady,
+  onClearRoute,
+  onClose,
+  routeSummary,
+}: NavigationPanelProps) => {
   const [destination, setDestination] = useState("");
-  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
-  const [locating, setLocating] = useState(false);
-  const [route, setRoute] = useState<RouteResult | null>(null);
-  const [roadData, setRoadData] = useState<any>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [currentInstruction, setCurrentInstruction] = useState(0);
-  const [watchId, setWatchId] = useState<number | null>(null);
   const [error, setError] = useState("");
-
-  // Load road network
-  useEffect(() => {
-    fetch("/data/road_network.geojson")
-      .then((r) => r.json())
-      .then(setRoadData)
-      .catch(() => setError("Failed to load road network"));
-  }, []);
+  const [locating, setLocating] = useState(false);
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
 
   const destinations = useMemo(() => {
     return allFeatures
@@ -58,12 +53,12 @@ const NavigationPanel = ({ allFeatures, onRouteCalculated, onClose }: Navigation
         setError("Could not get location: " + err.message);
         setLocating(false);
       },
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: true, timeout: 10000 }
     );
   }, []);
 
   const calculateRoute = useCallback(() => {
-    if (!roadData || !userLocation) {
+    if (!userLocation) {
       setError("Please get your location first");
       return;
     }
@@ -77,7 +72,6 @@ const NavigationPanel = ({ allFeatures, onRouteCalculated, onClose }: Navigation
     }
 
     setError("");
-    const { graph, nodes } = buildGraph(roadData);
 
     // Get destination centroid
     let destLat: number, destLng: number;
@@ -95,71 +89,24 @@ const NavigationPanel = ({ allFeatures, onRouteCalculated, onClose }: Navigation
       destLat = geom.coordinates[1];
     }
 
-    const startNode = findNearestNode(nodes, userLocation[1], userLocation[0]);
-    const endNode = findNearestNode(nodes, destLat, destLng);
+    onRouteReady(userLocation, [destLng, destLat]);
 
-    const result = dijkstra(graph, nodes, startNode, endNode);
-    if (!result) {
-      setError("No route found");
-      return;
+    // Voice announcement
+    if (voiceEnabled && "speechSynthesis" in window) {
+      const utterance = new SpeechSynthesisUtterance(
+        `Routing to ${destFeature.name}`
+      );
+      utterance.rate = 1;
+      speechSynthesis.speak(utterance);
     }
+  }, [userLocation, destination, allFeatures, onRouteReady, voiceEnabled]);
 
-    setRoute(result);
-    setCurrentInstruction(0);
-    onRouteCalculated(result);
-
-    if (voiceEnabled && result.instructions.length > 0) {
-      speakInstruction(result.instructions[0].text);
-    }
-  }, [roadData, userLocation, destination, allFeatures, onRouteCalculated, voiceEnabled]);
-
-  // Real-time tracking
-  const startTracking = useCallback(() => {
-    if (!navigator.geolocation || !route) return;
-    const id = navigator.geolocation.watchPosition(
-      (pos) => {
-        setUserLocation([pos.coords.longitude, pos.coords.latitude]);
-
-        // Check if near next instruction
-        if (route && currentInstruction < route.instructions.length - 1) {
-          const inst = route.instructions[currentInstruction + 1];
-          const d = Math.sqrt(
-            (pos.coords.latitude - inst.coord[1]) ** 2 + (pos.coords.longitude - inst.coord[0]) ** 2
-          ) * 111000;
-          if (d < 15) {
-            setCurrentInstruction((prev) => prev + 1);
-            if (voiceEnabled) {
-              speakInstruction(inst.text);
-            }
-          }
-        }
-      },
-      undefined,
-      { enableHighAccuracy: true, maximumAge: 2000 }
-    );
-    setWatchId(id);
-  }, [route, currentInstruction, voiceEnabled]);
-
-  const stopTracking = useCallback(() => {
-    if (watchId !== null) {
-      navigator.geolocation.clearWatch(watchId);
-      setWatchId(null);
-    }
-  }, [watchId]);
-
-  const clearRoute = useCallback(() => {
-    setRoute(null);
+  const handleClear = useCallback(() => {
     setDestination("");
-    setCurrentInstruction(0);
-    stopTracking();
-    onRouteCalculated(null);
-  }, [stopTracking, onRouteCalculated]);
-
-  useEffect(() => {
-    return () => {
-      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-    };
-  }, [watchId]);
+    setError("");
+    setUserLocation(null);
+    onClearRoute();
+  }, [onClearRoute]);
 
   return (
     <div className="bg-white rounded-lg shadow-xl p-3 space-y-2 text-sm">
@@ -175,23 +122,26 @@ const NavigationPanel = ({ allFeatures, onRouteCalculated, onClose }: Navigation
           >
             {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
-          <button onClick={() => { clearRoute(); onClose(); }} className="p-1 rounded hover:bg-gray-100">
+          <button
+            onClick={() => {
+              handleClear();
+              onClose();
+            }}
+            className="p-1 rounded hover:bg-gray-100"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       {/* Location */}
-      <div className="flex gap-2">
-        <button
-          onClick={locateUser}
-          disabled={locating}
-          className="flex items-center gap-1 px-3 py-1.5 rounded bg-green-600 text-white text-xs hover:bg-green-700 disabled:opacity-50"
-        >
-          <Locate className="w-3 h-3" />
-          {locating ? "Locating..." : userLocation ? "Located ✓" : "Get Location"}
-        </button>
-      </div>
+      <button
+        onClick={locateUser}
+        disabled={locating}
+        className="flex items-center gap-1 px-3 py-1.5 rounded bg-green-600 text-white text-xs hover:bg-green-700 disabled:opacity-50 w-full justify-center"
+      >
+        {locating ? "Locating..." : userLocation ? "📍 Located ✓" : "📍 Get My Location"}
+      </button>
 
       {/* Destination search */}
       <div className="relative">
@@ -202,7 +152,7 @@ const NavigationPanel = ({ allFeatures, onRouteCalculated, onClose }: Navigation
           placeholder="Type destination..."
           className="w-full px-3 py-1.5 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
         />
-        {filteredDest.length > 0 && !route && (
+        {filteredDest.length > 0 && !routeSummary && (
           <div className="absolute top-full left-0 right-0 bg-white border rounded-b shadow-lg z-10 max-h-40 overflow-y-auto">
             {filteredDest.map((d) => (
               <button
@@ -217,7 +167,7 @@ const NavigationPanel = ({ allFeatures, onRouteCalculated, onClose }: Navigation
         )}
       </div>
 
-      {!route && (
+      {!routeSummary && (
         <button
           onClick={calculateRoute}
           className="w-full py-1.5 rounded bg-green-700 text-white text-xs font-semibold hover:bg-green-800"
@@ -228,55 +178,23 @@ const NavigationPanel = ({ allFeatures, onRouteCalculated, onClose }: Navigation
 
       {error && <p className="text-red-500 text-xs">{error}</p>}
 
-      {/* Route info */}
-      {route && (
+      {/* Route summary from Leaflet Routing Machine */}
+      {routeSummary && (
         <div className="space-y-2">
           <div className="flex justify-between text-xs bg-green-50 p-2 rounded">
-            <span><b>{Math.round(route.distance)}m</b> distance</span>
-            <span><b>{Math.ceil(route.time / 60)} min</b> walking</span>
+            <span>
+              <b>{routeSummary.distance >= 1000 ? (routeSummary.distance / 1000).toFixed(2) + " km" : Math.round(routeSummary.distance) + " m"}</b> distance
+            </span>
+            <span>
+              <b>{Math.ceil(routeSummary.time / 60)} min</b> walking
+            </span>
           </div>
-
-          <div className="flex gap-2">
-            {watchId === null ? (
-              <button
-                onClick={startTracking}
-                className="flex-1 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700"
-              >
-                Start Navigation
-              </button>
-            ) : (
-              <button
-                onClick={stopTracking}
-                className="flex-1 py-1 rounded bg-red-600 text-white text-xs hover:bg-red-700"
-              >
-                Stop Tracking
-              </button>
-            )}
-            <button
-              onClick={clearRoute}
-              className="px-3 py-1 rounded bg-gray-200 text-xs hover:bg-gray-300"
-            >
-              Clear
-            </button>
-          </div>
-
-          {/* Turn-by-turn */}
-          <div className="max-h-32 overflow-y-auto space-y-1">
-            {route.instructions.map((inst, i) => (
-              <div
-                key={i}
-                className={`text-xs px-2 py-1 rounded ${
-                  i === currentInstruction
-                    ? "bg-green-100 font-semibold border-l-2 border-green-600"
-                    : i < currentInstruction
-                    ? "text-gray-400 line-through"
-                    : "text-gray-600"
-                }`}
-              >
-                {inst.text}
-              </div>
-            ))}
-          </div>
+          <button
+            onClick={handleClear}
+            className="w-full px-3 py-1.5 rounded bg-gray-200 text-xs hover:bg-gray-300"
+          >
+            Clear Route
+          </button>
         </div>
       )}
     </div>

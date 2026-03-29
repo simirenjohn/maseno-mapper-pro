@@ -1,8 +1,10 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet-routing-machine";
+import "leaflet-routing-machine/dist/leaflet-routing-machine.css";
 import { LAYER_CONFIGS, ROOM_DATA_MAP, FacilityFeature } from "@/lib/layerConfig";
-import { RouteResult } from "@/lib/routing";
+import { GeoJSONRouter } from "@/lib/customRouter";
 import NavigationPanel from "./NavigationPanel";
 
 const BASEMAPS = {
@@ -17,6 +19,8 @@ const STUDY_AREAS = [
   { file: "/data/siriba_study_area.geojson", name: "Siriba Study Area" },
   { file: "/data/college_campus_study_area.geojson", name: "College Campus Study Area" },
 ];
+
+const ROAD_NETWORK_URL = "/data/road_network.geojson";
 
 interface CampusMapProps {
   selectedFeature: FacilityFeature | null;
@@ -39,8 +43,11 @@ const CampusMap = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const layerGroupsRef = useRef<Record<string, L.GeoJSON>>({});
   const baseTileRef = useRef<L.TileLayer | null>(null);
-  const routeLayerRef = useRef<L.Polyline | null>(null);
+  const routingControlRef = useRef<L.Routing.RoutingControl | null>(null);
   const roomDataCache = useRef<Record<number, any[]>>({});
+  const customRouterRef = useRef<GeoJSONRouter | null>(null);
+
+  const [routeSummary, setRouteSummary] = useState<{ distance: number; time: number } | null>(null);
 
   // Load room data
   useEffect(() => {
@@ -53,6 +60,11 @@ const CampusMap = ({
         console.error(`Failed to load rooms for building ${buildingId}:`, err);
       }
     });
+  }, []);
+
+  // Initialize custom router once
+  useEffect(() => {
+    customRouterRef.current = new GeoJSONRouter(ROAD_NETWORK_URL);
   }, []);
 
   const getRoomTableHtml = useCallback((buildingId: number) => {
@@ -161,7 +173,7 @@ const CampusMap = ({
 
     mapRef.current = map;
 
-    // Load study area boundaries (red outline, no fill)
+    // Load study area boundaries
     STUDY_AREAS.forEach(async (area) => {
       try {
         const resp = await fetch(area.file);
@@ -186,8 +198,8 @@ const CampusMap = ({
       }
     });
 
-    // Load road network (subtle grey lines)
-    fetch("/data/road_network.geojson")
+    // Load road network
+    fetch(ROAD_NETWORK_URL)
       .then((r) => r.json())
       .then((data) => {
         L.geoJSON(data, {
@@ -215,8 +227,7 @@ const CampusMap = ({
             opacity: 0.8,
           }),
           onEachFeature: (feature, layer) => {
-            const name =
-              feature.properties[config.nameField] || "Unknown";
+            const name = feature.properties[config.nameField] || "Unknown";
             layer.bindPopup(
               getPopupContent(feature.properties, name, config.color),
               { className: "campus-popup", maxWidth: 350 }
@@ -265,9 +276,7 @@ const CampusMap = ({
       const targetLayer = layerGroupsRef.current[selectedFeature.layerId];
       if (targetLayer) {
         targetLayer.eachLayer((layer: any) => {
-          const config = LAYER_CONFIGS.find(
-            (c) => c.id === selectedFeature.layerId
-          );
+          const config = LAYER_CONFIGS.find((c) => c.id === selectedFeature.layerId);
           if (
             config &&
             layer.feature?.properties[config.nameField] === selectedFeature.name
@@ -281,26 +290,65 @@ const CampusMap = ({
     }
   }, [selectedFeature]);
 
-  // Display route on map
-  const handleRouteCalculated = useCallback((route: RouteResult | null) => {
+  // Add route using Leaflet Routing Machine with custom router
+  const handleRouteReady = useCallback(
+    (origin: [number, number], destCoord: [number, number]) => {
+      const map = mapRef.current;
+      if (!map || !customRouterRef.current) return;
+
+      // Remove existing route
+      if (routingControlRef.current) {
+        map.removeControl(routingControlRef.current);
+        routingControlRef.current = null;
+      }
+
+      const startLatLng = L.latLng(origin[1], origin[0]);
+      const endLatLng = L.latLng(destCoord[1], destCoord[0]);
+
+      const control = L.Routing.control({
+        waypoints: [startLatLng, endLatLng],
+        router: customRouterRef.current as any,
+        lineOptions: {
+          styles: [{ color: "#2563eb", weight: 6, opacity: 0.8 }],
+          extendToWaypoints: true,
+          missingRouteTolerance: 50,
+          addWaypoints: false,
+        },
+        show: false, // hide the built-in instructions panel
+        addWaypoints: false,
+        routeWhileDragging: false,
+        fitSelectedRoutes: true,
+        showAlternatives: false,
+      }).addTo(map);
+
+      control.on("routesfound", (e: any) => {
+        const routes = e.routes;
+        if (routes.length > 0) {
+          const summary = routes[0].summary;
+          setRouteSummary({
+            distance: summary.totalDistance,
+            time: summary.totalTime,
+          });
+        }
+      });
+
+      control.on("routingerror", (e: any) => {
+        console.error("Routing error:", e.error);
+      });
+
+      routingControlRef.current = control;
+    },
+    []
+  );
+
+  const handleClearRoute = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    if (routeLayerRef.current) {
-      map.removeLayer(routeLayerRef.current);
-      routeLayerRef.current = null;
+    if (routingControlRef.current) {
+      map.removeControl(routingControlRef.current);
+      routingControlRef.current = null;
     }
-
-    if (route) {
-      const latLngs = route.path.map((c) => L.latLng(c[1], c[0]));
-      routeLayerRef.current = L.polyline(latLngs, {
-        color: "#2563eb",
-        weight: 5,
-        opacity: 0.8,
-        dashArray: "10, 10",
-      }).addTo(map);
-      map.fitBounds(routeLayerRef.current.getBounds(), { padding: [50, 50] });
-    }
+    setRouteSummary(null);
   }, []);
 
   return (
@@ -311,8 +359,10 @@ const CampusMap = ({
         <div className="absolute top-3 left-3 z-[800] w-72">
           <NavigationPanel
             allFeatures={allFeatures}
-            onRouteCalculated={handleRouteCalculated}
+            onRouteReady={handleRouteReady}
+            onClearRoute={handleClearRoute}
             onClose={onCloseNavigation}
+            routeSummary={routeSummary}
           />
         </div>
       )}
