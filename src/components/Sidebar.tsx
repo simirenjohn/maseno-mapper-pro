@@ -29,7 +29,6 @@ const Sidebar = ({
 }: SidebarProps) => {
   const [isOpen, setIsOpen] = useState(true);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
-  // Generic filters: { [layerId]: { [filterKey]: selectedValue } }
   const [layerFilters, setLayerFilters] = useState<Record<string, Record<string, string>>>({});
 
   // Build filter options dynamically from data
@@ -57,28 +56,27 @@ const Sidebar = ({
     return opts;
   }, [allFeatures]);
 
-  // Group and filter features
+  // Search results (flat list across all categories)
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
+    return allFeatures.filter(
+      (f) =>
+        f.name.toLowerCase().includes(q) ||
+        f.layerName.toLowerCase().includes(q) ||
+        Object.values(f.properties).some((v) => v && String(v).toLowerCase().includes(q))
+    );
+  }, [allFeatures, searchQuery]);
+
+  // Group features by category (unfiltered by search — search results shown separately)
   const categorizedFeatures = useMemo(() => {
     const groups: Record<string, FacilityFeature[]> = {};
-    let features = allFeatures;
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      features = features.filter(
-        (f) =>
-          f.name.toLowerCase().includes(q) ||
-          f.layerName.toLowerCase().includes(q) ||
-          Object.values(f.properties).some((v) => v && String(v).toLowerCase().includes(q))
-      );
-    }
-
-    features.forEach((f) => {
+    allFeatures.forEach((f) => {
       if (!groups[f.layerId]) groups[f.layerId] = [];
       groups[f.layerId].push(f);
     });
-
     return groups;
-  }, [allFeatures, searchQuery]);
+  }, [allFeatures]);
 
   const getFilteredFeatures = (layerId: string) => {
     let features = categorizedFeatures[layerId] || [];
@@ -155,13 +153,6 @@ const Sidebar = ({
             </div>
             <div className="flex items-center gap-1">
               <button
-                onClick={onOpenNavigation}
-                className="text-green-200/80 hover:text-white transition-colors"
-                title="Navigation"
-              >
-                <Navigation className="w-5 h-5" />
-              </button>
-              <button
                 onClick={() => setShowGuide(true)}
                 className="text-green-200/80 hover:text-white transition-colors"
                 title="User Guide"
@@ -201,6 +192,43 @@ const Sidebar = ({
             </button>
           )}
         </div>
+
+        {/* Search results (shown above categories when searching) */}
+        {searchQuery.trim() && (
+          <div className="border-b border-gray-200">
+            <div className="px-3 pt-2 pb-1">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Search Results ({searchResults.length})
+              </p>
+            </div>
+            <ScrollArea className="max-h-48">
+              <div className="px-3 pb-2 space-y-0.5">
+                {searchResults.length > 0 ? (
+                  searchResults.map((feature, idx) => (
+                    <button
+                      key={`search-${feature.layerId}-${idx}`}
+                      onClick={() => onSelectFeature(feature)}
+                      className="w-full text-left px-2 py-1.5 rounded hover:bg-gray-50 transition-colors flex items-center gap-2 group"
+                    >
+                      <MapPin
+                        className="w-3.5 h-3.5 flex-shrink-0"
+                        style={{ color: feature.color }}
+                      />
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm text-gray-700 truncate group-hover:text-green-700">
+                          {feature.name}
+                        </span>
+                        <span className="text-[10px] text-gray-400">{feature.layerName}</span>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <p className="text-xs text-gray-400 py-2 text-center">No results found</p>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        )}
 
         {/* Categories label */}
         <div className="px-3 pt-3 pb-1">
@@ -242,7 +270,6 @@ const Sidebar = ({
 
                   {isExpanded && (
                     <div className="pb-2">
-                      {/* Dynamic filters */}
                       {layer.filters && layer.filters.length > 0 && (
                         <div className="px-2 pb-2 space-y-1.5">
                           <div className="flex items-center justify-between">
@@ -276,7 +303,6 @@ const Sidebar = ({
                         </div>
                       )}
 
-                      {/* Feature list */}
                       <div className="space-y-0.5 px-1">
                         {features.map((feature, idx) => (
                           <button
@@ -304,6 +330,22 @@ const Sidebar = ({
                 </div>
               );
             })}
+          </div>
+
+          {/* Navigation section below categories */}
+          <div className="px-3 pb-4">
+            <div className="border-t border-gray-200 pt-3">
+              <button
+                onClick={onOpenNavigation}
+                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[hsl(152,40%,28%)] text-white text-sm font-semibold hover:bg-[hsl(152,40%,24%)] transition-colors"
+              >
+                <Navigation className="w-4 h-4" />
+                Find Route to Destination
+              </button>
+              <p className="text-[10px] text-gray-400 mt-1 text-center">
+                Get directions using your current location
+              </p>
+            </div>
           </div>
         </ScrollArea>
       </div>
