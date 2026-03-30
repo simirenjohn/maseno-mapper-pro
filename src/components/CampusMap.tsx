@@ -294,20 +294,56 @@ const CampusMap = ({
     }
   }, [selectedFeature]);
 
+  // Helper to create labeled markers
+  const createLabelMarker = useCallback((latlng: L.LatLng, label: string, color: string) => {
+    const icon = L.divIcon({
+      className: 'route-label-marker',
+      html: `<div style="
+        background: ${color};
+        color: white;
+        padding: 4px 10px;
+        border-radius: 16px;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        border: 2px solid white;
+        text-align: center;
+      ">${label}</div>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 20],
+    });
+    return L.marker(latlng, { icon, interactive: false });
+  }, []);
+
+  // Clear route markers helper
+  const clearRouteMarkers = useCallback(() => {
+    routeMarkersRef.current.forEach(m => m.remove());
+    routeMarkersRef.current = [];
+  }, []);
+
   // Add route using Leaflet Routing Machine with custom router
   const handleRouteReady = useCallback(
     (origin: [number, number], destCoord: [number, number]) => {
       const map = mapRef.current;
       if (!map || !customRouterRef.current) return;
 
-      // Remove existing route
+      // Remove existing route & markers
       if (routingControlRef.current) {
         map.removeControl(routingControlRef.current);
         routingControlRef.current = null;
       }
+      clearRouteMarkers();
 
       const startLatLng = L.latLng(origin[1], origin[0]);
       const endLatLng = L.latLng(destCoord[1], destCoord[0]);
+
+      // Add origin and destination markers
+      const originMarker = createLabelMarker(startLatLng, "📍 You are here", "#2563eb");
+      const destMarker = createLabelMarker(endLatLng, `🏁 ${destinationName || "Destination"}`, "#dc2626");
+      originMarker.addTo(map);
+      destMarker.addTo(map);
+      routeMarkersRef.current = [originMarker, destMarker];
 
       const control = L.Routing.control({
         waypoints: [startLatLng, endLatLng],
@@ -318,7 +354,7 @@ const CampusMap = ({
           missingRouteTolerance: 50,
           addWaypoints: false,
         },
-        show: false, // hide the built-in instructions panel
+        show: false,
         addWaypoints: false,
         routeWhileDragging: false,
         fitSelectedRoutes: true,
@@ -342,7 +378,7 @@ const CampusMap = ({
 
       routingControlRef.current = control;
     },
-    []
+    [destinationName, createLabelMarker, clearRouteMarkers]
   );
 
   const handleClearRoute = useCallback(() => {
@@ -352,8 +388,9 @@ const CampusMap = ({
       map.removeControl(routingControlRef.current);
       routingControlRef.current = null;
     }
+    clearRouteMarkers();
     setRouteSummary(null);
-  }, []);
+  }, [clearRouteMarkers]);
 
   return (
     <div className="relative w-full h-full">
