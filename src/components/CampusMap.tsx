@@ -30,6 +30,7 @@ interface CampusMapProps {
   allFeatures: FacilityFeature[];
   showNavigation: boolean;
   onCloseNavigation: () => void;
+  destinationName?: string;
 }
 
 const CampusMap = ({
