@@ -12,6 +12,7 @@ const Index = () => {
   const [allFeatures, setAllFeatures] = useState<FacilityFeature[]>([]);
   const [showGuide, setShowGuide] = useState(false);
   const [showNavigation, setShowNavigation] = useState(false);
+  const [destinationName, setDestinationName] = useState("");
 
   useEffect(() => {
     const loadAll = async () => {
@@ -70,6 +71,8 @@ const Index = () => {
           allFeatures={allFeatures}
           showNavigation={showNavigation}
           onCloseNavigation={() => setShowNavigation(false)}
+          destinationName={destinationName}
+          onDestinationNameChange={setDestinationName}
         />
       </div>
       <UserGuide open={showGuide} onClose={() => setShowGuide(false)} />
