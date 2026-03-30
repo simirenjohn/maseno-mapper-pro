@@ -17,6 +17,7 @@ const NavigationPanel = ({
   onClearRoute,
   onClose,
   routeSummary,
+  onDestinationNameChange,
 }: NavigationPanelProps) => {
   const [destination, setDestination] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
