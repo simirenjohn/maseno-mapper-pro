@@ -46,6 +46,7 @@ const CampusMap = ({
   const routingControlRef = useRef<L.Routing.RoutingControl | null>(null);
   const roomDataCache = useRef<Record<number, any[]>>({});
   const customRouterRef = useRef<GeoJSONRouter | null>(null);
+  const routeMarkersRef = useRef<L.Marker[]>([]);
 
   const [routeSummary, setRouteSummary] = useState<{ distance: number; time: number } | null>(null);
 
