@@ -8,6 +8,7 @@ interface NavigationPanelProps {
   onClearRoute: () => void;
   onClose: () => void;
   routeSummary: { distance: number; time: number } | null;
+  onDestinationNameChange?: (name: string) => void;
 }
 
 const NavigationPanel = ({
