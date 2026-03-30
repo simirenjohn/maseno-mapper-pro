@@ -31,6 +31,7 @@ interface CampusMapProps {
   showNavigation: boolean;
   onCloseNavigation: () => void;
   destinationName?: string;
+  onDestinationNameChange?: (name: string) => void;
 }
 
 const CampusMap = ({
@@ -40,6 +41,7 @@ const CampusMap = ({
   showNavigation,
   onCloseNavigation,
   destinationName,
+  onDestinationNameChange,
 }: CampusMapProps) => {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
