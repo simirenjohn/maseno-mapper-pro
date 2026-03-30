@@ -69,7 +69,8 @@ const NavigationPanel = ({
   const selectDestination = useCallback((name: string) => {
     setDestination(name);
     setShowSuggestions(false);
-  }, []);
+    onDestinationNameChange?.(name);
+  }, [onDestinationNameChange]);
 
   const calculateRoute = useCallback(() => {
     if (!userLocation) {
