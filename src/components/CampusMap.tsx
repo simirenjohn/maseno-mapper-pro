@@ -406,6 +406,7 @@ const CampusMap = ({
             onClearRoute={handleClearRoute}
             onClose={onCloseNavigation}
             routeSummary={routeSummary}
+            onDestinationNameChange={onDestinationNameChange}
           />
         </div>
       )}
