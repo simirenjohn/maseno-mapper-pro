@@ -205,3 +205,13 @@ All colors MUST be HSL.
 .leaflet-routing-geocoders {
   display: none !important;
 }
+
+/* Animated route line - moving dashes to show direction */
+@keyframes route-dash-flow {
+  0% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -40; }
+}
+
+.animated-route-line {
+  animation: route-dash-flow 1s linear infinite;
+}

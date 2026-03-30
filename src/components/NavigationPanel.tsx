@@ -153,8 +153,9 @@ const NavigationPanel = ({
             setShowSuggestions(true);
           }}
           onFocus={() => setShowSuggestions(true)}
-          placeholder="Search destination..."
-          className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-gray-900 placeholder:text-gray-400"
+          placeholder="Type destination name..."
+          className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-gray-900 placeholder-gray-400"
+          style={{ color: '#111', WebkitTextFillColor: '#111' }}
         />
         {showSuggestions && filteredDest.length > 0 && !routeSummary && (
           <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b shadow-lg z-[900] max-h-48 overflow-y-auto">
