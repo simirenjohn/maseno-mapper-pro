@@ -204,9 +204,10 @@ const CampusMap = ({
       .then((data) => {
         L.geoJSON(data, {
           style: () => ({
-            color: "#888",
-            weight: 1.5,
-            opacity: 0.5,
+            color: "#4a5568",
+            weight: 2.5,
+            opacity: 0.7,
+            dashArray: "4, 6",
           }),
         }).addTo(map);
       })

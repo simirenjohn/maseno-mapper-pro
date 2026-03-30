@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Navigation, X, Volume2, VolumeX } from "lucide-react";
 import { FacilityFeature } from "@/lib/layerConfig";
 
@@ -22,6 +22,8 @@ const NavigationPanel = ({
   const [error, setError] = useState("");
   const [locating, setLocating] = useState(false);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   const destinations = useMemo(() => {
     return allFeatures
@@ -32,48 +34,55 @@ const NavigationPanel = ({
   }, [allFeatures]);
 
   const filteredDest = useMemo(() => {
-    if (!destination.trim()) return [];
+    if (!destination.trim()) return destinations.slice(0, 8);
     const q = destination.toLowerCase();
     return destinations.filter((d) => d.toLowerCase().includes(q)).slice(0, 8);
   }, [destination, destinations]);
 
-  const locateUser = useCallback(() => {
-    if (!navigator.geolocation) {
-      setError("Geolocation not supported");
-      return;
-    }
+  // Auto-locate on mount
+  useEffect(() => {
+    if (!navigator.geolocation) return;
     setLocating(true);
-    setError("");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setUserLocation([pos.coords.longitude, pos.coords.latitude]);
         setLocating(false);
       },
-      (err) => {
-        setError("Could not get location: " + err.message);
-        setLocating(false);
-      },
+      () => setLocating(false),
       { enableHighAccuracy: true, timeout: 10000 }
     );
   }, []);
 
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const selectDestination = useCallback((name: string) => {
+    setDestination(name);
+    setShowSuggestions(false);
+  }, []);
+
   const calculateRoute = useCallback(() => {
     if (!userLocation) {
-      setError("Please get your location first");
+      setError("Still locating you… please wait");
       return;
     }
-
     const destFeature = allFeatures.find(
       (f) => f.name.toLowerCase() === destination.toLowerCase() && f.geometry
     );
     if (!destFeature) {
-      setError("Destination not found");
+      setError("Select a destination from the list");
       return;
     }
-
     setError("");
 
-    // Get destination centroid
     let destLat: number, destLng: number;
     const geom = destFeature.geometry;
     if (geom.type === "MultiPolygon") {
@@ -91,11 +100,8 @@ const NavigationPanel = ({
 
     onRouteReady(userLocation, [destLng, destLat]);
 
-    // Voice announcement
     if (voiceEnabled && "speechSynthesis" in window) {
-      const utterance = new SpeechSynthesisUtterance(
-        `Routing to ${destFeature.name}`
-      );
+      const utterance = new SpeechSynthesisUtterance(`Routing to ${destFeature.name}`);
       utterance.rate = 1;
       speechSynthesis.speak(utterance);
     }
@@ -115,6 +121,9 @@ const NavigationPanel = ({
           <Navigation className="w-4 h-4" /> Navigation
         </div>
         <div className="flex items-center gap-1">
+          <span className="text-[10px] text-gray-500">
+            {locating ? "Locating…" : userLocation ? "📍 Located" : "📍 No GPS"}
+          </span>
           <button
             onClick={() => setVoiceEnabled(!voiceEnabled)}
             className="p-1 rounded hover:bg-gray-100"
@@ -123,10 +132,7 @@ const NavigationPanel = ({
             {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
           <button
-            onClick={() => {
-              handleClear();
-              onClose();
-            }}
+            onClick={() => { handleClear(); onClose(); }}
             className="p-1 rounded hover:bg-gray-100"
           >
             <X className="w-4 h-4" />
@@ -134,31 +140,29 @@ const NavigationPanel = ({
         </div>
       </div>
 
-      {/* Location */}
-      <button
-        onClick={locateUser}
-        disabled={locating}
-        className="flex items-center gap-1 px-3 py-1.5 rounded bg-green-600 text-white text-xs hover:bg-green-700 disabled:opacity-50 w-full justify-center"
-      >
-        {locating ? "Locating..." : userLocation ? "📍 Located ✓" : "📍 Get My Location"}
-      </button>
-
-      {/* Destination search */}
-      <div className="relative">
+      {/* Destination input with dropdown */}
+      <div ref={wrapperRef} className="relative">
         <input
           type="text"
           value={destination}
-          onChange={(e) => setDestination(e.target.value)}
-          placeholder="Type destination..."
-          className="w-full px-3 py-1.5 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+          onChange={(e) => {
+            setDestination(e.target.value);
+            setShowSuggestions(true);
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          placeholder="Search destination..."
+          className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white text-gray-900 placeholder:text-gray-400"
         />
-        {filteredDest.length > 0 && !routeSummary && (
-          <div className="absolute top-full left-0 right-0 bg-white border rounded-b shadow-lg z-10 max-h-40 overflow-y-auto">
+        {showSuggestions && filteredDest.length > 0 && !routeSummary && (
+          <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b shadow-lg z-[900] max-h-48 overflow-y-auto">
             {filteredDest.map((d) => (
               <button
                 key={d}
-                onClick={() => setDestination(d)}
-                className="w-full text-left px-3 py-1.5 hover:bg-gray-100 text-xs"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectDestination(d);
+                }}
+                className="w-full text-left px-3 py-2 hover:bg-green-50 text-xs border-b border-gray-50 last:border-0"
               >
                 {d}
               </button>
@@ -170,7 +174,7 @@ const NavigationPanel = ({
       {!routeSummary && (
         <button
           onClick={calculateRoute}
-          className="w-full py-1.5 rounded bg-green-700 text-white text-xs font-semibold hover:bg-green-800"
+          className="w-full py-2 rounded bg-green-700 text-white text-xs font-semibold hover:bg-green-800"
         >
           Find Route
         </button>
@@ -178,7 +182,6 @@ const NavigationPanel = ({
 
       {error && <p className="text-red-500 text-xs">{error}</p>}
 
-      {/* Route summary from Leaflet Routing Machine */}
       {routeSummary && (
         <div className="space-y-2">
           <div className="flex justify-between text-xs bg-green-50 p-2 rounded">
