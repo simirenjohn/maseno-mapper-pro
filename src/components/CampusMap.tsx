@@ -351,7 +351,10 @@ const CampusMap = ({
         waypoints: [startLatLng, endLatLng],
         router: customRouterRef.current as any,
         lineOptions: {
-          styles: [{ color: "#2563eb", weight: 6, opacity: 0.8 }],
+          styles: [
+            { color: "#2563eb", weight: 8, opacity: 0.3 },
+            { color: "#2563eb", weight: 4, opacity: 0.9, dashArray: "12, 8", className: "animated-route-line" },
+          ],
           extendToWaypoints: true,
           missingRouteTolerance: 50,
           addWaypoints: false,
