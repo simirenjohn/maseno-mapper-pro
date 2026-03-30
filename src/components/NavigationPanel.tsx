@@ -8,6 +8,7 @@ interface NavigationPanelProps {
   onClearRoute: () => void;
   onClose: () => void;
   routeSummary: { distance: number; time: number } | null;
+  onDestinationNameChange?: (name: string) => void;
 }
 
 const NavigationPanel = ({
@@ -16,6 +17,7 @@ const NavigationPanel = ({
   onClearRoute,
   onClose,
   routeSummary,
+  onDestinationNameChange,
 }: NavigationPanelProps) => {
   const [destination, setDestination] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
@@ -67,7 +69,8 @@ const NavigationPanel = ({
   const selectDestination = useCallback((name: string) => {
     setDestination(name);
     setShowSuggestions(false);
-  }, []);
+    onDestinationNameChange?.(name);
+  }, [onDestinationNameChange]);
 
   const calculateRoute = useCallback(() => {
     if (!userLocation) {
@@ -184,6 +187,16 @@ const NavigationPanel = ({
 
       {routeSummary && (
         <div className="space-y-2">
+          <div className="text-xs space-y-1 bg-blue-50 p-2 rounded">
+            <div className="flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-600"></span>
+              <span className="font-semibold">Origin:</span> Your Location
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-red-600"></span>
+              <span className="font-semibold">Destination:</span> {destination}
+            </div>
+          </div>
           <div className="flex justify-between text-xs bg-green-50 p-2 rounded">
             <span>
               <b>{routeSummary.distance >= 1000 ? (routeSummary.distance / 1000).toFixed(2) + " km" : Math.round(routeSummary.distance) + " m"}</b> distance
