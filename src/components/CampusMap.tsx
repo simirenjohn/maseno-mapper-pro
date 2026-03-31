@@ -353,8 +353,8 @@ const CampusMap = ({
       const endLatLng = L.latLng(destCoord[1], destCoord[0]);
 
       // Add origin and destination markers
-      const originMarker = createLabelMarker(startLatLng, "📍 You are here", "#2563eb");
-      const destMarker = createLabelMarker(endLatLng, `🏁 ${destinationName || "Destination"}`, "#dc2626");
+      const originMarker = createOriginMarker(startLatLng);
+      const destMarker = createDestMarker(endLatLng, destinationName || "Destination");
       originMarker.addTo(map);
       destMarker.addTo(map);
       routeMarkersRef.current = [originMarker, destMarker];
@@ -364,8 +364,8 @@ const CampusMap = ({
         router: customRouterRef.current as any,
         lineOptions: {
           styles: [
-            { color: "#2563eb", weight: 8, opacity: 0.3 },
-            { color: "#2563eb", weight: 4, opacity: 0.9, dashArray: "12, 8", className: "animated-route-line" },
+            { color: "#3388ff", weight: 6, opacity: 0.4 },
+            { color: "#3388ff", weight: 3, opacity: 0.9 },
           ],
           extendToWaypoints: true,
           missingRouteTolerance: 50,
@@ -381,11 +381,24 @@ const CampusMap = ({
       control.on("routesfound", (e: any) => {
         const routes = e.routes;
         if (routes.length > 0) {
-          const summary = routes[0].summary;
+          const route = routes[0];
+          const summary = route.summary;
           setRouteSummary({
             distance: summary.totalDistance,
             time: summary.totalTime,
           });
+
+          // Add animated dashed overlay on top of the route
+          if (animatedLineRef.current) animatedLineRef.current.remove();
+          const coords = route.coordinates as L.LatLng[];
+          const animLine = L.polyline(coords, {
+            color: "#2563eb",
+            weight: 4,
+            opacity: 0.9,
+            dashArray: "12, 8",
+            className: "animated-route-line",
+          }).addTo(map);
+          animatedLineRef.current = animLine;
         }
       });
 
