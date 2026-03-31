@@ -53,6 +53,7 @@ const CampusMap = ({
   const routeMarkersRef = useRef<L.Marker[]>([]);
 
   const [routeSummary, setRouteSummary] = useState<{ distance: number; time: number } | null>(null);
+  const animatedLineRef = useRef<L.Polyline | null>(null);
 
   // Load room data
   useEffect(() => {
@@ -296,32 +297,43 @@ const CampusMap = ({
     }
   }, [selectedFeature]);
 
-  // Helper to create labeled markers
-  const createLabelMarker = useCallback((latlng: L.LatLng, label: string, color: string) => {
+  // Create origin marker with pulse effect
+  const createOriginMarker = useCallback((latlng: L.LatLng) => {
     const icon = L.divIcon({
-      className: 'route-label-marker',
-      html: `<div style="
-        background: ${color};
-        color: white;
-        padding: 4px 10px;
-        border-radius: 16px;
-        font-size: 12px;
-        font-weight: 600;
-        white-space: nowrap;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        border: 2px solid white;
-        text-align: center;
-      ">${label}</div>`,
+      className: 'pulse-marker',
+      html: `<div style="position:relative;display:flex;align-items:center;gap:6px;">
+        <div style="width:18px;height:18px;background:#2ecc71;border-radius:50%;border:3px solid white;box-shadow:0 0 8px rgba(46,204,113,0.6);"></div>
+        <div style="background:#2563eb;color:white;padding:3px 10px;border-radius:14px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:2px solid white;">📍 You are here</div>
+      </div>`,
       iconSize: [0, 0],
-      iconAnchor: [0, 20],
+      iconAnchor: [9, 9],
+    });
+    const m = L.marker(latlng, { icon, interactive: false });
+    return m;
+  }, []);
+
+  // Create destination marker with flag
+  const createDestMarker = useCallback((latlng: L.LatLng, name: string) => {
+    const icon = L.divIcon({
+      className: 'dest-marker',
+      html: `<div style="display:flex;align-items:center;gap:6px;">
+        <div style="font-size:24px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.3));">🚩</div>
+        <div style="background:#dc2626;color:white;padding:3px 10px;border-radius:14px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:2px solid white;">🏁 ${name}</div>
+      </div>`,
+      iconSize: [0, 0],
+      iconAnchor: [12, 24],
     });
     return L.marker(latlng, { icon, interactive: false });
   }, []);
 
-  // Clear route markers helper
+  // Clear route markers and animated line
   const clearRouteMarkers = useCallback(() => {
     routeMarkersRef.current.forEach(m => m.remove());
     routeMarkersRef.current = [];
+    if (animatedLineRef.current) {
+      animatedLineRef.current.remove();
+      animatedLineRef.current = null;
+    }
   }, []);
 
   // Add route using Leaflet Routing Machine with custom router
@@ -341,8 +353,8 @@ const CampusMap = ({
       const endLatLng = L.latLng(destCoord[1], destCoord[0]);
 
       // Add origin and destination markers
-      const originMarker = createLabelMarker(startLatLng, "📍 You are here", "#2563eb");
-      const destMarker = createLabelMarker(endLatLng, `🏁 ${destinationName || "Destination"}`, "#dc2626");
+      const originMarker = createOriginMarker(startLatLng);
+      const destMarker = createDestMarker(endLatLng, destinationName || "Destination");
       originMarker.addTo(map);
       destMarker.addTo(map);
       routeMarkersRef.current = [originMarker, destMarker];
@@ -352,8 +364,8 @@ const CampusMap = ({
         router: customRouterRef.current as any,
         lineOptions: {
           styles: [
-            { color: "#2563eb", weight: 8, opacity: 0.3 },
-            { color: "#2563eb", weight: 4, opacity: 0.9, dashArray: "12, 8", className: "animated-route-line" },
+            { color: "#3388ff", weight: 6, opacity: 0.4 },
+            { color: "#3388ff", weight: 3, opacity: 0.9 },
           ],
           extendToWaypoints: true,
           missingRouteTolerance: 50,
@@ -369,11 +381,24 @@ const CampusMap = ({
       control.on("routesfound", (e: any) => {
         const routes = e.routes;
         if (routes.length > 0) {
-          const summary = routes[0].summary;
+          const route = routes[0];
+          const summary = route.summary;
           setRouteSummary({
             distance: summary.totalDistance,
             time: summary.totalTime,
           });
+
+          // Add animated dashed overlay on top of the route
+          if (animatedLineRef.current) animatedLineRef.current.remove();
+          const coords = route.coordinates as L.LatLng[];
+          const animLine = L.polyline(coords, {
+            color: "#2563eb",
+            weight: 4,
+            opacity: 0.9,
+            dashArray: "12, 8",
+            className: "animated-route-line",
+          }).addTo(map);
+          animatedLineRef.current = animLine;
         }
       });
 
@@ -383,7 +408,7 @@ const CampusMap = ({
 
       routingControlRef.current = control;
     },
-    [destinationName, createLabelMarker, clearRouteMarkers]
+    [destinationName, createOriginMarker, createDestMarker, clearRouteMarkers]
   );
 
   const handleClearRoute = useCallback(() => {
