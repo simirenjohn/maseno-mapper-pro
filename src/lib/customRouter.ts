@@ -20,9 +20,10 @@ export class GeoJSONRouter {
 
   route(
     waypoints: L.Routing.Waypoint[],
-    callback: (err?: L.Routing.IError | Error, routes?: L.Routing.IRoute[]) => void
+    callback: (err?: L.Routing.IError | Error, routes?: L.Routing.IRoute[]) => void,
+    context?: any
   ) {
-    this.graphPromise
+    const request = this.graphPromise
       .then(({ graph, nodes }) => {
         if (waypoints.length < 2) {
           callback(new Error("Need at least 2 waypoints"));
@@ -75,5 +76,10 @@ export class GeoJSONRouter {
       .catch((err) => {
         callback(err instanceof Error ? err : new Error(String(err)));
       });
+
+    if (context) {
+      context._pendingRequest = request;
+    }
+    return request as any;
   }
 }
