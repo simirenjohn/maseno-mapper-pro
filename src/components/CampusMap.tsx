@@ -45,13 +45,12 @@ const CampusMap = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const layerGroupsRef = useRef<Record<string, L.GeoJSON>>({});
   const baseTileRef = useRef<L.TileLayer | null>(null);
-  const routingControlRef = useRef<L.Routing.RoutingControl | null>(null);
   const roomDataCache = useRef<Record<number, any[]>>({});
-  const customRouterRef = useRef<GeoJSONRouter | null>(null);
+  const graphDataRef = useRef<{ graph: Record<string, { to: string; weight: number }[]>; nodes: Map<string, [number, number]> } | null>(null);
   const routeMarkersRef = useRef<L.Marker[]>([]);
+  const routeLayersRef = useRef<L.Layer[]>([]);
 
   const [routeSummary, setRouteSummary] = useState<{ distance: number; time: number } | null>(null);
-  const animatedLineRef = useRef<L.Polyline | null>(null);
 
   // Load room data
   useEffect(() => {
