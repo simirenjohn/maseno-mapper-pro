@@ -76,5 +76,10 @@ export class GeoJSONRouter {
       .catch((err) => {
         callback(err instanceof Error ? err : new Error(String(err)));
       });
+
+    if (context) {
+      context._pendingRequest = request;
+    }
+    return request as any;
   }
 }

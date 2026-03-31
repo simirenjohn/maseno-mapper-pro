@@ -364,8 +364,7 @@ const CampusMap = ({
         router: customRouterRef.current as any,
         lineOptions: {
           styles: [
-            { color: "#3388ff", weight: 6, opacity: 0.4 },
-            { color: "#3388ff", weight: 3, opacity: 0.9 },
+            { color: "#3388ff", weight: 7, opacity: 0.8 },
           ],
           extendToWaypoints: true,
           missingRouteTolerance: 50,
@@ -388,17 +387,17 @@ const CampusMap = ({
             time: summary.totalTime,
           });
 
-          // Add animated dashed overlay on top of the route
+          // Draw a thick visible blue route line on top
           if (animatedLineRef.current) animatedLineRef.current.remove();
           const coords = route.coordinates as L.LatLng[];
-          const animLine = L.polyline(coords, {
-            color: "#2563eb",
-            weight: 4,
+          const routeLine = L.polyline(coords, {
+            color: "#4285F4",
+            weight: 6,
             opacity: 0.9,
-            dashArray: "12, 8",
-            className: "animated-route-line",
+            lineCap: "round",
+            lineJoin: "round",
           }).addTo(map);
-          animatedLineRef.current = animLine;
+          animatedLineRef.current = routeLine;
         }
       });
 
