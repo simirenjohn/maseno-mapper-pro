@@ -297,24 +297,31 @@ const CampusMap = ({
     }
   }, [selectedFeature]);
 
-  // Helper to create labeled markers
-  const createLabelMarker = useCallback((latlng: L.LatLng, label: string, color: string) => {
+  // Create origin marker with pulse effect
+  const createOriginMarker = useCallback((latlng: L.LatLng) => {
     const icon = L.divIcon({
-      className: 'route-label-marker',
-      html: `<div style="
-        background: ${color};
-        color: white;
-        padding: 4px 10px;
-        border-radius: 16px;
-        font-size: 12px;
-        font-weight: 600;
-        white-space: nowrap;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        border: 2px solid white;
-        text-align: center;
-      ">${label}</div>`,
+      className: 'pulse-marker',
+      html: `<div style="position:relative;display:flex;align-items:center;gap:6px;">
+        <div style="width:18px;height:18px;background:#2ecc71;border-radius:50%;border:3px solid white;box-shadow:0 0 8px rgba(46,204,113,0.6);"></div>
+        <div style="background:#2563eb;color:white;padding:3px 10px;border-radius:14px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:2px solid white;">📍 You are here</div>
+      </div>`,
       iconSize: [0, 0],
-      iconAnchor: [0, 20],
+      iconAnchor: [9, 9],
+    });
+    const m = L.marker(latlng, { icon, interactive: false });
+    return m;
+  }, []);
+
+  // Create destination marker with flag
+  const createDestMarker = useCallback((latlng: L.LatLng, name: string) => {
+    const icon = L.divIcon({
+      className: 'dest-marker',
+      html: `<div style="display:flex;align-items:center;gap:6px;">
+        <div style="font-size:24px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.3));">🚩</div>
+        <div style="background:#dc2626;color:white;padding:3px 10px;border-radius:14px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:2px solid white;">🏁 ${name}</div>
+      </div>`,
+      iconSize: [0, 0],
+      iconAnchor: [12, 24],
     });
     return L.marker(latlng, { icon, interactive: false });
   }, []);
