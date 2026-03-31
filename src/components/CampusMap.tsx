@@ -53,6 +53,7 @@ const CampusMap = ({
   const routeMarkersRef = useRef<L.Marker[]>([]);
 
   const [routeSummary, setRouteSummary] = useState<{ distance: number; time: number } | null>(null);
+  const animatedLineRef = useRef<L.Polyline | null>(null);
 
   // Load room data
   useEffect(() => {
