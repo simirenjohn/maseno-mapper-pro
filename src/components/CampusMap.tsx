@@ -1,10 +1,8 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import "leaflet-routing-machine";
-import "leaflet-routing-machine/dist/leaflet-routing-machine.css";
 import { LAYER_CONFIGS, ROOM_DATA_MAP, FacilityFeature } from "@/lib/layerConfig";
-import { GeoJSONRouter } from "@/lib/customRouter";
+import { buildGraph, findNearestNode, dijkstra } from "@/lib/routing";
 import NavigationPanel from "./NavigationPanel";
 
 const BASEMAPS = {
