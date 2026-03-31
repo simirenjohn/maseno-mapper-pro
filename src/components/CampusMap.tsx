@@ -326,10 +326,14 @@ const CampusMap = ({
     return L.marker(latlng, { icon, interactive: false });
   }, []);
 
-  // Clear route markers helper
+  // Clear route markers and animated line
   const clearRouteMarkers = useCallback(() => {
     routeMarkersRef.current.forEach(m => m.remove());
     routeMarkersRef.current = [];
+    if (animatedLineRef.current) {
+      animatedLineRef.current.remove();
+      animatedLineRef.current = null;
+    }
   }, []);
 
   // Add route using Leaflet Routing Machine with custom router
