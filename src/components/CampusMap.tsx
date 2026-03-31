@@ -408,7 +408,7 @@ const CampusMap = ({
 
       routingControlRef.current = control;
     },
-    [destinationName, createLabelMarker, clearRouteMarkers]
+    [destinationName, createOriginMarker, createDestMarker, clearRouteMarkers]
   );
 
   const handleClearRoute = useCallback(() => {
