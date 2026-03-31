@@ -1,10 +1,8 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import "leaflet-routing-machine";
-import "leaflet-routing-machine/dist/leaflet-routing-machine.css";
 import { LAYER_CONFIGS, ROOM_DATA_MAP, FacilityFeature } from "@/lib/layerConfig";
-import { GeoJSONRouter } from "@/lib/customRouter";
+import { buildGraph, findNearestNode, dijkstra } from "@/lib/routing";
 import NavigationPanel from "./NavigationPanel";
 
 const BASEMAPS = {
@@ -47,13 +45,12 @@ const CampusMap = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const layerGroupsRef = useRef<Record<string, L.GeoJSON>>({});
   const baseTileRef = useRef<L.TileLayer | null>(null);
-  const routingControlRef = useRef<L.Routing.RoutingControl | null>(null);
   const roomDataCache = useRef<Record<number, any[]>>({});
-  const customRouterRef = useRef<GeoJSONRouter | null>(null);
+  const graphDataRef = useRef<{ graph: Record<string, { to: string; weight: number }[]>; nodes: Map<string, [number, number]> } | null>(null);
   const routeMarkersRef = useRef<L.Marker[]>([]);
+  const routeLayersRef = useRef<L.Layer[]>([]);
 
   const [routeSummary, setRouteSummary] = useState<{ distance: number; time: number } | null>(null);
-  const animatedLineRef = useRef<L.Polyline | null>(null);
 
   // Load room data
   useEffect(() => {
@@ -68,9 +65,14 @@ const CampusMap = ({
     });
   }, []);
 
-  // Initialize custom router once
+  // Load road network graph once
   useEffect(() => {
-    customRouterRef.current = new GeoJSONRouter(ROAD_NETWORK_URL);
+    fetch(ROAD_NETWORK_URL)
+      .then((r) => r.json())
+      .then((data) => {
+        graphDataRef.current = buildGraph(data);
+      })
+      .catch((err) => console.error("Failed to build graph:", err));
   }, []);
 
   const getRoomTableHtml = useCallback((buildingId: number) => {
@@ -326,97 +328,109 @@ const CampusMap = ({
     return L.marker(latlng, { icon, interactive: false });
   }, []);
 
-  // Clear route markers and animated line
+  // Clear all route layers
   const clearRouteMarkers = useCallback(() => {
     routeMarkersRef.current.forEach(m => m.remove());
     routeMarkersRef.current = [];
-    if (animatedLineRef.current) {
-      animatedLineRef.current.remove();
-      animatedLineRef.current = null;
-    }
+    routeLayersRef.current.forEach(l => l.remove());
+    routeLayersRef.current = [];
   }, []);
 
-  // Add route using Leaflet Routing Machine with custom router
+  // Create arrow markers along a path
+  const addArrowMarkers = useCallback((map: L.Map, coords: L.LatLng[]) => {
+    const markers: L.Marker[] = [];
+    // Place an arrow every ~80px on the map
+    const totalPoints = coords.length;
+    const step = Math.max(Math.floor(totalPoints / 15), 2);
+    
+    for (let i = step; i < totalPoints - 1; i += step) {
+      const from = coords[i - 1];
+      const to = coords[i];
+      // Calculate bearing for arrow rotation
+      const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+      const y = Math.sin(dLng) * Math.cos((to.lat * Math.PI) / 180);
+      const x = Math.cos((from.lat * Math.PI) / 180) * Math.sin((to.lat * Math.PI) / 180) -
+        Math.sin((from.lat * Math.PI) / 180) * Math.cos((to.lat * Math.PI) / 180) * Math.cos(dLng);
+      const angle = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+
+      const arrowIcon = L.divIcon({
+        className: 'route-arrow',
+        html: `<div style="transform:rotate(${angle}deg);font-size:16px;color:#1a73e8;text-shadow:0 0 3px white, 0 0 3px white;">▶</div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+      const m = L.marker(coords[i], { icon: arrowIcon, interactive: false }).addTo(map);
+      markers.push(m);
+    }
+    return markers;
+  }, []);
+
+  // Route directly using Dijkstra (no LRM)
   const handleRouteReady = useCallback(
     (origin: [number, number], destCoord: [number, number]) => {
       const map = mapRef.current;
-      if (!map || !customRouterRef.current) return;
+      const graphData = graphDataRef.current;
+      if (!map || !graphData) return;
 
-      // Remove existing route & markers
-      if (routingControlRef.current) {
-        map.removeControl(routingControlRef.current);
-        routingControlRef.current = null;
-      }
       clearRouteMarkers();
 
-      const startLatLng = L.latLng(origin[1], origin[0]);
-      const endLatLng = L.latLng(destCoord[1], destCoord[0]);
+      const { graph, nodes } = graphData;
+      const startKey = findNearestNode(nodes, origin[1], origin[0]);
+      const endKey = findNearestNode(nodes, destCoord[1], destCoord[0]);
+      const result = dijkstra(graph, nodes, startKey, endKey);
+
+      if (!result) {
+        console.error("No route found");
+        return;
+      }
+
+      const coords = result.path.map((c) => L.latLng(c[1], c[0]));
+
+      // Draw thick blue route line
+      const bgLine = L.polyline(coords, {
+        color: "#1a73e8",
+        weight: 8,
+        opacity: 0.4,
+        lineCap: "round",
+        lineJoin: "round",
+      }).addTo(map);
+
+      const mainLine = L.polyline(coords, {
+        color: "#4285F4",
+        weight: 5,
+        opacity: 0.95,
+        lineCap: "round",
+        lineJoin: "round",
+      }).addTo(map);
+
+      routeLayersRef.current.push(bgLine, mainLine);
+
+      // Add direction arrows
+      const arrowMarkers = addArrowMarkers(map, coords);
+      arrowMarkers.forEach(m => routeLayersRef.current.push(m));
 
       // Add origin and destination markers
+      const startLatLng = L.latLng(origin[1], origin[0]);
+      const endLatLng = L.latLng(destCoord[1], destCoord[0]);
       const originMarker = createOriginMarker(startLatLng);
       const destMarker = createDestMarker(endLatLng, destinationName || "Destination");
       originMarker.addTo(map);
       destMarker.addTo(map);
       routeMarkersRef.current = [originMarker, destMarker];
 
-      const control = L.Routing.control({
-        waypoints: [startLatLng, endLatLng],
-        router: customRouterRef.current as any,
-        lineOptions: {
-          styles: [
-            { color: "#3388ff", weight: 7, opacity: 0.8 },
-          ],
-          extendToWaypoints: true,
-          missingRouteTolerance: 50,
-          addWaypoints: false,
-        },
-        show: false,
-        addWaypoints: false,
-        routeWhileDragging: false,
-        fitSelectedRoutes: true,
-        showAlternatives: false,
-      }).addTo(map);
+      // Fit map to route
+      const bounds = L.latLngBounds(coords);
+      map.fitBounds(bounds, { padding: [50, 50] });
 
-      control.on("routesfound", (e: any) => {
-        const routes = e.routes;
-        if (routes.length > 0) {
-          const route = routes[0];
-          const summary = route.summary;
-          setRouteSummary({
-            distance: summary.totalDistance,
-            time: summary.totalTime,
-          });
-
-          // Draw a thick visible blue route line on top
-          if (animatedLineRef.current) animatedLineRef.current.remove();
-          const coords = route.coordinates as L.LatLng[];
-          const routeLine = L.polyline(coords, {
-            color: "#4285F4",
-            weight: 6,
-            opacity: 0.9,
-            lineCap: "round",
-            lineJoin: "round",
-          }).addTo(map);
-          animatedLineRef.current = routeLine;
-        }
+      setRouteSummary({
+        distance: result.distance,
+        time: result.time,
       });
-
-      control.on("routingerror", (e: any) => {
-        console.error("Routing error:", e.error);
-      });
-
-      routingControlRef.current = control;
     },
-    [destinationName, createOriginMarker, createDestMarker, clearRouteMarkers]
+    [destinationName, createOriginMarker, createDestMarker, clearRouteMarkers, addArrowMarkers]
   );
 
   const handleClearRoute = useCallback(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (routingControlRef.current) {
-      map.removeControl(routingControlRef.current);
-      routingControlRef.current = null;
-    }
     clearRouteMarkers();
     setRouteSummary(null);
   }, [clearRouteMarkers]);
