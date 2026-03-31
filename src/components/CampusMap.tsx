@@ -65,9 +65,14 @@ const CampusMap = ({
     });
   }, []);
 
-  // Initialize custom router once
+  // Load road network graph once
   useEffect(() => {
-    customRouterRef.current = new GeoJSONRouter(ROAD_NETWORK_URL);
+    fetch(ROAD_NETWORK_URL)
+      .then((r) => r.json())
+      .then((data) => {
+        graphDataRef.current = buildGraph(data);
+      })
+      .catch((err) => console.error("Failed to build graph:", err));
   }, []);
 
   const getRoomTableHtml = useCallback((buildingId: number) => {
