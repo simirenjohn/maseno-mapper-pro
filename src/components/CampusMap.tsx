@@ -4,6 +4,7 @@ import "leaflet/dist/leaflet.css";
 import { LAYER_CONFIGS, ROOM_DATA_MAP, FacilityFeature } from "@/lib/layerConfig";
 import { buildGraph, findNearestNode, dijkstra } from "@/lib/routing";
 import NavigationPanel from "./NavigationPanel";
+import { MapPin } from "lucide-react";
 
 const BASEMAPS = {
   OpenStreetMap: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -46,11 +47,14 @@ const CampusMap = ({
   const layerGroupsRef = useRef<Record<string, L.GeoJSON>>({});
   const baseTileRef = useRef<L.TileLayer | null>(null);
   const roomDataCache = useRef<Record<number, any[]>>({});
-  const graphDataRef = useRef<{ graph: Record<string, { to: string; weight: number }[]>; nodes: Map<string, [number, number]> } | null>(null);
+  const graphDataRef = useRef<ReturnType<typeof buildGraph> | null>(null);
   const routeMarkersRef = useRef<L.Marker[]>([]);
   const routeLayersRef = useRef<L.Layer[]>([]);
+  const locationMarkerRef = useRef<L.Marker | null>(null);
+  const locationCircleRef = useRef<L.Circle | null>(null);
 
   const [routeSummary, setRouteSummary] = useState<{ distance: number; time: number } | null>(null);
+  const [locatingUser, setLocatingUser] = useState(false);
 
   // Load room data
   useEffect(() => {
@@ -206,7 +210,7 @@ const CampusMap = ({
       }
     });
 
-    // Load road network
+    // Load road network visual layer
     fetch(ROAD_NETWORK_URL)
       .then((r) => r.json())
       .then((data) => {
@@ -299,10 +303,64 @@ const CampusMap = ({
     }
   }, [selectedFeature]);
 
+  // Show My Location
+  const handleShowMyLocation = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !navigator.geolocation) return;
+    setLocatingUser(true);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const accuracy = pos.coords.accuracy;
+        const latlng = L.latLng(lat, lng);
+
+        // Remove previous location marker
+        if (locationMarkerRef.current) locationMarkerRef.current.remove();
+        if (locationCircleRef.current) locationCircleRef.current.remove();
+
+        // Accuracy circle
+        locationCircleRef.current = L.circle(latlng, {
+          radius: accuracy,
+          color: "#4285F4",
+          fillColor: "#4285F4",
+          fillOpacity: 0.15,
+          weight: 1,
+        }).addTo(map);
+
+        // Pulse marker
+        const icon = L.divIcon({
+          className: "my-location-marker",
+          html: `<div style="position:relative;">
+            <div style="width:20px;height:20px;background:#4285F4;border-radius:50%;border:3px solid white;box-shadow:0 0 10px rgba(66,133,244,0.6);"></div>
+            <div style="position:absolute;top:-6px;left:-6px;width:32px;height:32px;border-radius:50%;border:2px solid #4285F4;opacity:0;animation:location-pulse 2s ease-out infinite;"></div>
+          </div>`,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10],
+        });
+
+        locationMarkerRef.current = L.marker(latlng, { icon })
+          .addTo(map)
+          .bindPopup(`<b>You are here</b><br>Accuracy: ${Math.round(accuracy)}m`)
+          .openPopup();
+
+        map.setView(latlng, 17);
+        setLocatingUser(false);
+      },
+      (err) => {
+        console.error("Location error:", err.message);
+        setLocatingUser(false);
+        alert("Could not get your location. Please enable GPS.");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  }, []);
+
   // Create origin marker with pulse effect
   const createOriginMarker = useCallback((latlng: L.LatLng) => {
     const icon = L.divIcon({
-      className: 'pulse-marker',
+      className: "pulse-marker",
       html: `<div style="position:relative;display:flex;align-items:center;gap:6px;">
         <div style="width:18px;height:18px;background:#2ecc71;border-radius:50%;border:3px solid white;box-shadow:0 0 8px rgba(46,204,113,0.6);"></div>
         <div style="background:#2563eb;color:white;padding:3px 10px;border-radius:14px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:2px solid white;">📍 You are here</div>
@@ -310,14 +368,13 @@ const CampusMap = ({
       iconSize: [0, 0],
       iconAnchor: [9, 9],
     });
-    const m = L.marker(latlng, { icon, interactive: false });
-    return m;
+    return L.marker(latlng, { icon, interactive: false });
   }, []);
 
-  // Create destination marker with flag
+  // Create destination marker
   const createDestMarker = useCallback((latlng: L.LatLng, name: string) => {
     const icon = L.divIcon({
-      className: 'dest-marker',
+      className: "dest-marker",
       html: `<div style="display:flex;align-items:center;gap:6px;">
         <div style="font-size:24px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.3));">🚩</div>
         <div style="background:#dc2626;color:white;padding:3px 10px;border-radius:14px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:2px solid white;">🏁 ${name}</div>
@@ -328,36 +385,37 @@ const CampusMap = ({
     return L.marker(latlng, { icon, interactive: false });
   }, []);
 
-  // Clear all route layers
+  // Clear route layers
   const clearRouteMarkers = useCallback(() => {
-    routeMarkersRef.current.forEach(m => m.remove());
+    routeMarkersRef.current.forEach((m) => m.remove());
     routeMarkersRef.current = [];
-    routeLayersRef.current.forEach(l => l.remove());
+    routeLayersRef.current.forEach((l) => {
+      if ("remove" in l) (l as any).remove();
+    });
     routeLayersRef.current = [];
   }, []);
 
-  // Create arrow markers along a path
+  // Add arrow markers along path
   const addArrowMarkers = useCallback((map: L.Map, coords: L.LatLng[]) => {
     const markers: L.Marker[] = [];
-    // Place an arrow every ~80px on the map
     const totalPoints = coords.length;
     const step = Math.max(Math.floor(totalPoints / 15), 2);
-    
+
     for (let i = step; i < totalPoints - 1; i += step) {
       const from = coords[i - 1];
       const to = coords[i];
-      // Calculate bearing for arrow rotation
       const dLng = ((to.lng - from.lng) * Math.PI) / 180;
       const y = Math.sin(dLng) * Math.cos((to.lat * Math.PI) / 180);
-      const x = Math.cos((from.lat * Math.PI) / 180) * Math.sin((to.lat * Math.PI) / 180) -
+      const x =
+        Math.cos((from.lat * Math.PI) / 180) * Math.sin((to.lat * Math.PI) / 180) -
         Math.sin((from.lat * Math.PI) / 180) * Math.cos((to.lat * Math.PI) / 180) * Math.cos(dLng);
       const angle = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 
       const arrowIcon = L.divIcon({
-        className: 'route-arrow',
-        html: `<div style="transform:rotate(${angle}deg);font-size:16px;color:#1a73e8;text-shadow:0 0 3px white, 0 0 3px white;">▶</div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
+        className: "route-arrow",
+        html: `<div style="transform:rotate(${angle}deg);font-size:18px;color:#1a73e8;text-shadow:0 0 4px white,0 0 4px white,0 0 4px white;">▶</div>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
       });
       const m = L.marker(coords[i], { icon: arrowIcon, interactive: false }).addTo(map);
       markers.push(m);
@@ -365,40 +423,50 @@ const CampusMap = ({
     return markers;
   }, []);
 
-  // Route directly using Dijkstra (no LRM)
+  // Route using Dijkstra on the main connected component
   const handleRouteReady = useCallback(
     (origin: [number, number], destCoord: [number, number]) => {
       const map = mapRef.current;
       const graphData = graphDataRef.current;
-      if (!map || !graphData) return;
-
-      clearRouteMarkers();
-
-      const { graph, nodes } = graphData;
-      const startKey = findNearestNode(nodes, origin[1], origin[0]);
-      const endKey = findNearestNode(nodes, destCoord[1], destCoord[0]);
-      const result = dijkstra(graph, nodes, startKey, endKey);
-
-      if (!result) {
-        console.error("No route found");
+      if (!map || !graphData) {
+        console.error("Map or graph not ready");
         return;
       }
 
+      clearRouteMarkers();
+
+      const { graph, nodes, mainComponent } = graphData;
+
+      // Snap both to the largest connected component
+      const startKey = findNearestNode(nodes, origin[1], origin[0], mainComponent);
+      const endKey = findNearestNode(nodes, destCoord[1], destCoord[0], mainComponent);
+
+      console.log(`Routing from ${startKey} to ${endKey}, component size: ${mainComponent.size}`);
+
+      const result = dijkstra(graph, nodes, startKey, endKey);
+
+      if (!result) {
+        console.error("No route found between", startKey, "and", endKey);
+        return;
+      }
+
+      console.log(`Route found: ${result.path.length} points, ${Math.round(result.distance)}m`);
+
       const coords = result.path.map((c) => L.latLng(c[1], c[0]));
 
-      // Draw thick blue route line
+      // Draw thick blue route line (background shadow + main line)
       const bgLine = L.polyline(coords, {
         color: "#1a73e8",
-        weight: 8,
-        opacity: 0.4,
+        weight: 10,
+        opacity: 0.35,
         lineCap: "round",
         lineJoin: "round",
       }).addTo(map);
 
       const mainLine = L.polyline(coords, {
         color: "#4285F4",
-        weight: 5,
-        opacity: 0.95,
+        weight: 6,
+        opacity: 1,
         lineCap: "round",
         lineJoin: "round",
       }).addTo(map);
@@ -407,20 +475,20 @@ const CampusMap = ({
 
       // Add direction arrows
       const arrowMarkers = addArrowMarkers(map, coords);
-      arrowMarkers.forEach(m => routeLayersRef.current.push(m));
+      arrowMarkers.forEach((m) => routeLayersRef.current.push(m));
 
       // Add origin and destination markers
       const startLatLng = L.latLng(origin[1], origin[0]);
       const endLatLng = L.latLng(destCoord[1], destCoord[0]);
-      const originMarker = createOriginMarker(startLatLng);
-      const destMarker = createDestMarker(endLatLng, destinationName || "Destination");
-      originMarker.addTo(map);
-      destMarker.addTo(map);
+      const originMarker = createOriginMarker(startLatLng).addTo(map);
+      const destMarker = createDestMarker(endLatLng, destinationName || "Destination").addTo(map);
       routeMarkersRef.current = [originMarker, destMarker];
 
-      // Fit map to route
+      // Fit map to route bounds
       const bounds = L.latLngBounds(coords);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      bounds.extend(startLatLng);
+      bounds.extend(endLatLng);
+      map.fitBounds(bounds, { padding: [60, 60] });
 
       setRouteSummary({
         distance: result.distance,
@@ -438,6 +506,20 @@ const CampusMap = ({
   return (
     <div className="relative w-full h-full">
       <div ref={mapContainerRef} className="w-full h-full" />
+
+      {/* Show My Location button */}
+      <button
+        onClick={handleShowMyLocation}
+        disabled={locatingUser}
+        className="absolute bottom-6 right-4 z-[800] bg-white rounded-full p-3 shadow-lg hover:bg-gray-50 active:bg-gray-100 transition-colors border border-gray-200"
+        title="Show my location"
+      >
+        {locatingUser ? (
+          <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        ) : (
+          <MapPin className="w-5 h-5 text-blue-600" />
+        )}
+      </button>
 
       {showNavigation && (
         <div className="absolute top-3 left-3 z-[800] w-72">
