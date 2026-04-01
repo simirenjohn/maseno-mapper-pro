@@ -1,14 +1,8 @@
 // Dijkstra shortest path on road network GeoJSON
 
-interface GraphNode {
-  key: string;
-  lat: number;
-  lng: number;
-}
-
 interface GraphEdge {
   to: string;
-  weight: number; // distance in meters
+  weight: number;
 }
 
 type Graph = Record<string, GraphEdge[]>;
@@ -37,9 +31,9 @@ function bearing(lat1: number, lng1: number, lat2: number, lng2: number): number
 }
 
 export interface RouteResult {
-  path: [number, number][]; // [lng, lat] pairs
-  distance: number; // meters
-  time: number; // seconds (walking ~5km/h)
+  path: [number, number][];
+  distance: number;
+  time: number;
   instructions: TurnInstruction[];
 }
 
@@ -49,7 +43,10 @@ export interface TurnInstruction {
   coord: [number, number];
 }
 
-export function buildGraph(geojson: any): { graph: Graph; nodes: Map<string, [number, number]> } {
+/**
+ * Build graph and find the largest connected component so routing always works.
+ */
+export function buildGraph(geojson: any): { graph: Graph; nodes: Map<string, [number, number]>; mainComponent: Set<string> } {
   const graph: Graph = {};
   const nodes = new Map<string, [number, number]>();
 
@@ -66,7 +63,6 @@ export function buildGraph(geojson: any): { graph: Graph; nodes: Map<string, [nu
       nodes.set(keyB, b);
 
       const dist = haversine(a[1], a[0], b[1], b[0]);
-
       if (!graph[keyA]) graph[keyA] = [];
       if (!graph[keyB]) graph[keyB] = [];
       graph[keyA].push({ to: keyB, weight: dist });
@@ -74,17 +70,44 @@ export function buildGraph(geojson: any): { graph: Graph; nodes: Map<string, [nu
     }
   }
 
-  return { graph, nodes };
+  // BFS to find largest connected component
+  const visited = new Set<string>();
+  let largestComp = new Set<string>();
+
+  for (const node of Object.keys(graph)) {
+    if (visited.has(node)) continue;
+    const comp = new Set<string>();
+    const queue = [node];
+    while (queue.length > 0) {
+      const n = queue.pop()!;
+      if (visited.has(n)) continue;
+      visited.add(n);
+      comp.add(n);
+      for (const edge of graph[n] || []) {
+        if (!visited.has(edge.to)) queue.push(edge.to);
+      }
+    }
+    if (comp.size > largestComp.size) largestComp = comp;
+  }
+
+  console.log(`Road graph: ${nodes.size} nodes, largest component: ${largestComp.size} nodes`);
+
+  return { graph, nodes, mainComponent: largestComp };
 }
 
+/**
+ * Find nearest node that belongs to the main connected component.
+ */
 export function findNearestNode(
   nodes: Map<string, [number, number]>,
   lat: number,
-  lng: number
+  lng: number,
+  mainComponent?: Set<string>
 ): string {
   let bestKey = "";
   let bestDist = Infinity;
   for (const [key, coord] of nodes) {
+    if (mainComponent && !mainComponent.has(key)) continue;
     const d = haversine(lat, lng, coord[1], coord[0]);
     if (d < bestDist) {
       bestDist = d;
@@ -140,7 +163,6 @@ export function dijkstra(
 
   if (dist[endKey] === undefined) return null;
 
-  // Reconstruct path
   const path: [number, number][] = [];
   let current: string | null = endKey;
   while (current) {
@@ -149,10 +171,8 @@ export function dijkstra(
   }
 
   const totalDist = dist[endKey];
-  const walkingSpeed = 5 / 3.6; // 5 km/h in m/s
+  const walkingSpeed = 5 / 3.6;
   const time = totalDist / walkingSpeed;
-
-  // Generate turn instructions
   const instructions = generateInstructions(path);
 
   return { path, distance: totalDist, time, instructions };
